@@ -172,16 +172,10 @@
                 <i class="far fa-calendar"></i>
               </span>
               <span class="post-meta-item-text">Posted on</span>
+              
 
-              <time title="Created: 2020-08-30 03:29:11" itemprop="dateCreated datePublished" datetime="2020-08-30T03:29:11+08:00">2020-08-30</time>
+              <time title="Created: 2020-08-30 03:29:11 / Modified: 04:37:36" itemprop="dateCreated datePublished" datetime="2020-08-30T03:29:11+08:00">2020-08-30</time>
             </span>
-              <span class="post-meta-item">
-                <span class="post-meta-item-icon">
-                  <i class="far fa-calendar-check"></i>
-                </span>
-                <span class="post-meta-item-text">Edited on</span>
-                <time title="Modified: 2020-08-29 18:19:41" itemprop="dateModified" datetime="2020-08-29T18:19:41+08:00">2020-08-29</time>
-              </span>
 
           
 
@@ -195,7 +189,6 @@
 
       
           <h1 id="格式化字符串—读"><a href="#格式化字符串—读" class="headerlink" title="格式化字符串—读"></a>格式化字符串—读</h1><h2 id="漏洞原理："><a href="#漏洞原理：" class="headerlink" title="漏洞原理："></a>漏洞原理：</h2><p>格式化字符串漏洞常见的标志为<code>printf(&amp;str)</code>，其中<code>str</code>中的内容是可控的。<code>printf</code>在解析<code>format</code>参数时，会自动从栈上<code>format</code>字符串结束的位置，按顺序读取格式化字符串对应的参数。如图所示，执行的命令为<code>printf(&quot;%s %d %d %d %x&quot;,buf, 1, 2, 3)</code>，紧随格式化字串后压入栈上的参数为4个，但格式化字串有五个参数，<code>printf</code>在解析第五个参数<code>%x</code>时，会继续往栈上读取，造成了信息泄露：</p>
-<img src="/2020/08/30/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/tupian.jpg" class title="This is an test image">
           <!--noindex-->
             <div class="post-button">
               <a class="btn" href="/2020/08/30/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/#more" rel="contents">
