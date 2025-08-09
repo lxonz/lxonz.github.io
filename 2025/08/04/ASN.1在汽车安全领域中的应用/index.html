@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"lxonz.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="针对极氪控车数据的流向进行逆向分析，发现无论是VDS数据上报，还是MQTT下发的控车消息，都遵照ASN.1标准进行封装并传输数据，在之前犬安科技的GoGohack中，也有议题分享了ASN.1在V2X上的应用，因此有必要对ASN.1在汽车中的应用进行系统的分析。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ASN.1在汽车安全领域的应用">
+<meta property="og:url" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/index.html">
+<meta property="og:site_name" content="lxonz&#39;s blog">
+<meta property="og:description" content="针对极氪控车数据的流向进行逆向分析，发现无论是VDS数据上报，还是MQTT下发的控车消息，都遵照ASN.1标准进行封装并传输数据，在之前犬安科技的GoGohack中，也有议题分享了ASN.1在V2X上的应用，因此有必要对ASN.1在汽车中的应用进行系统的分析。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%871.png">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%872.png">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%873.png">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%874.png">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%875.png">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%876.png">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%877.png">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%878.png">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%879.png">
+<meta property="og:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%8710.png">
+<meta property="article:published_time" content="2025-08-04T08:04:30.000Z">
+<meta property="article:modified_time" content="2025-08-09T08:50:52.033Z">
+<meta property="article:author" content="lxonz">
+<meta property="article:tag" content="lxonz,blog">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%871.png">
+
+<link rel="canonical" href="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>ASN.1在汽车安全领域的应用 | lxonz's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">lxonz's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">前小米汽车安全工程师三角洲猛攻大师web3持续学习中</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="lxonz">
+      <meta itemprop="description" content="前小米汽车安全工程师 三角洲猛攻大师 web3持续学习中">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="lxonz's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          ASN.1在汽车安全领域的应用
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2025-08-04 16:04:30" itemprop="dateCreated datePublished" datetime="2025-08-04T16:04:30+08:00">2025-08-04</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2025-08-09 16:50:52" itemprop="dateModified" datetime="2025-08-09T16:50:52+08:00">2025-08-09</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">汽车安全</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>1.6k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>1 分钟</span>
+            </span>
+            <div class="post-description">针对极氪控车数据的流向进行逆向分析，发现无论是VDS数据上报，还是MQTT下发的控车消息，都遵照ASN.1标准进行封装并传输数据，在之前犬安科技的GoGohack中，也有议题分享了ASN.1在V2X上的应用，因此有必要对ASN.1在汽车中的应用进行系统的分析。</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="一、背景"><a href="#一、背景" class="headerlink" title="一、背景"></a>一、背景</h1><p>针对极氪控车数据的流向进行逆向分析，发现无论是VDS数据上报，还是MQTT下发的控车消息，都遵照ASN.1标准进行封装并传输数据，在之前犬安科技的GoGohack中，也有议题分享了ASN.1在V2X上的应用，因此有必要对ASN.1在汽车中的应用进行系统的分析。</p>
+<h1 id="二、什么是ASN-1"><a href="#二、什么是ASN-1" class="headerlink" title="二、什么是ASN.1"></a>二、什么是ASN.1</h1><p>ASN.1 (Abstract Syntax Notation One)是一种用于描述和编码数据结构的标准化语言。它被广泛应用于网络协议和安全领域中，包括X.509证书，LDAP协议，SSL&#x2F;TLS协议等。</p>
+<p>ASN.1语言的定义方式比较抽象，它不依赖于具体的编程语言或平台。ASN.1定义了一些数据类型，包括整数、布尔值、字符串、对象标识符等，并且可以定义复合类型，如结构体、序列、集合等。ASN.1还支持定义约束条件，比如数据范围、长度等。</p>
+<p>ASN.1语言的编码方式也是规范化的，它定义了一种二进制编码格式，可以将ASN.1定义的数据结构转换成二进制流进行传输和存储。ASN.1编码方式非常紧凑和高效，可以在网络传输中减少数据传输量，提高通信效率。</p>
+<p>ASN.1的使用范围很广，可以用于各种领域的数据交换和传输，尤其在网络安全领域中，ASN.1是非常重要的基础技术之一。</p>
+<h2 id="举例"><a href="#举例" class="headerlink" title="举例"></a>举例</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">SEQUENCE (<span class="number">2</span> elem)</span><br><span class="line">  INTEGER <span class="number">1</span></span><br><span class="line">  OCTET <span class="title function_">STRING</span> <span class="params">(<span class="number">8</span> byte)</span> 48656C6C6F20576F726C64</span><br></pre></td></tr></table></figure>
+
+<p>上面代码为ASN.1标准的一套规范文件，它的二进制流为</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">30</span> <span class="number">0</span>D <span class="number">02</span> <span class="number">01</span> <span class="number">01</span> <span class="number">04</span> <span class="number">08</span> <span class="number">48</span> <span class="number">65</span> <span class="number">6</span>C <span class="number">6</span>C <span class="number">6F</span> <span class="number">20</span> <span class="number">57</span> <span class="number">6F</span> <span class="number">72</span> <span class="number">6</span>C <span class="number">64</span></span><br></pre></td></tr></table></figure>
+
+<p>在只给出数据类型的情况下，我们可以使用一些工具进行解码<a target="_blank" rel="noopener" href="https://rawcdn.githack.com/lapo-luchini/asn1js/1.2.4/index.html#MA0CAQEECEhlbGxvIFdv">https://rawcdn.githack.com/lapo-luchini/asn1js/1.2.4/index.html#MA0CAQEECEhlbGxvIFdv</a></p>
+<p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%871.png" alt="图片1.png"></p>
+<p>功能更全面的工具<a target="_blank" rel="noopener" href="https://asn1.io/asn1playground/%EF%BC%8C%E6%88%91%E4%BB%AC%E7%BB%99%E5%87%BA%E5%AE%9A%E4%B9%89%E7%9A%84%E5%85%B7%E4%BD%93%E8%A7%84%E8%8C%83%EF%BC%88%E8%8A%82%E9%80%89%E4%B8%80%E9%83%A8%E5%88%86%EF%BC%89%E4%BE%8B%E5%A6%82%EF%BC%9A">https://asn1.io/asn1playground/，我们给出定义的具体规范（节选一部分）例如：</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br></pre></td><td class="code"><pre><span class="line">MsgFrame DEFINITIONS AUTOMATIC TAGS ::= BEGIN</span><br><span class="line"></span><br><span class="line">MessageFrame ::= CHOICE &#123; </span><br><span class="line">    bsmFrame BasicSafetyMessage,</span><br><span class="line">    mapFrame MapData,</span><br><span class="line">    rsmFrame RoadsideSafetyMessage,</span><br><span class="line">    spatFrame SPAT,</span><br><span class="line">    rsiFrame RoadSideInformation,</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">BasicSafetyMessage ::= SEQUENCE &#123;</span><br><span class="line">    msgCnt MsgCount,</span><br><span class="line">    id OCTET STRING (SIZE(<span class="number">8</span>)),</span><br><span class="line">    secMark DSecond,</span><br><span class="line">    timeConfidence TimeConfidence OPTIONAL,</span><br><span class="line">    pos Position3D,</span><br><span class="line">    posAccuracy PositionalAccuracy OPTIONAL,</span><br><span class="line">    posConfidence PositionConfidenceSet OPTIONAL,</span><br><span class="line">    transmission TransmissionState,</span><br><span class="line">    speed Speed,</span><br><span class="line">    heading Heading,</span><br><span class="line">    angle SteeringWheelAngle OPTIONAL,</span><br><span class="line">    motionCfd MotionConfidenceSet OPTIONAL,</span><br><span class="line">    accelSet AccelerationSet4Way,</span><br><span class="line">    brakes BrakeSystemStatus,</span><br><span class="line">    size VehicleSize,</span><br><span class="line">    vehicleClass VehicleClassification,</span><br><span class="line">    safetyExt VehicleSafetyExtensions OPTIONAL,</span><br><span class="line">    emergencyExt VehicleEmergencyExtensions OPTIONAL,</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">MsgCount ::= INTEGER (<span class="number">0.</span>.<span class="number">127</span>)</span><br><span class="line"></span><br><span class="line">AccelerationSet4Way ::= SEQUENCE &#123;</span><br><span class="line">    <span class="type">long</span> Acceleration, </span><br><span class="line">    lat Acceleration, </span><br><span class="line">    vert VerticalAcceleration, </span><br><span class="line">    yaw YawRate</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">Acceleration ::= INTEGER (<span class="number">-2000.</span>.<span class="number">2001</span>)</span><br><span class="line">VerticalAcceleration ::= INTEGER (<span class="number">-127.</span>.<span class="number">127</span>)</span><br><span class="line">YawRate ::= INTEGER (<span class="number">-32767.</span>.<span class="number">32767</span>)</span><br><span class="line">Speed ::= INTEGER (<span class="number">0.</span>.<span class="number">8191</span>)</span><br><span class="line">Heading ::= INTEGER (<span class="number">0.</span>.<span class="number">28800</span>) </span><br><span class="line">CoarseHeading ::= INTEGER (<span class="number">0.</span>.<span class="number">240</span>)</span><br><span class="line">SteeringWheelAngle ::= INTEGER (<span class="number">-126.</span>.<span class="number">127</span>)</span><br><span class="line"></span><br><span class="line">MotionConfidenceSet ::= SEQUENCE &#123;</span><br><span class="line">    speedCfd SpeedConfidence OPTIONAL,</span><br><span class="line">    headingCfd HeadingConfidence OPTIONAL,</span><br><span class="line">    steerCfd SteeringWheelAngleConfidence OPTIONAL</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">HeadingConfidence ::= ENUMERATED &#123;</span><br><span class="line">    unavailable (<span class="number">0</span>), </span><br><span class="line">    prec10deg (<span class="number">1</span>), </span><br><span class="line">    prec05deg (<span class="number">2</span>), </span><br><span class="line">    prec01deg (<span class="number">3</span>), </span><br><span class="line">    prec0<span class="number">-1</span>deg (<span class="number">4</span>), </span><br><span class="line">    prec0<span class="number">-05</span>deg (<span class="number">5</span>), </span><br><span class="line">    prec0<span class="number">-01</span>deg (<span class="number">6</span>), </span><br><span class="line">    prec0<span class="number">-0125</span>deg (<span class="number">7</span>) </span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>给出对应规范文件的二进制流</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">00016626466686</span>a6c6e700001246654268f3dc631a51400000001f91f91fdfffc00140140000</span><br></pre></td></tr></table></figure>
+
+<p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%872.png" alt="图片2.png"></p>
+<p>下载解析的json文件，便可看到数据</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">  <span class="string">&quot;bsmFrame&quot;</span>:&#123;</span><br><span class="line">    <span class="string">&quot;msgCnt&quot;</span>:<span class="number">11</span>,</span><br><span class="line">    <span class="string">&quot;id&quot;</span>:<span class="string">&quot;3132333435363738&quot;</span>,</span><br><span class="line">    <span class="string">&quot;secMark&quot;</span>:<span class="number">0</span>,</span><br><span class="line">    <span class="string">&quot;pos&quot;</span>:&#123;</span><br><span class="line">      <span class="string">&quot;lat&quot;</span>:<span class="number">-594657005</span>,</span><br><span class="line">      <span class="string">&quot;long&quot;</span>:<span class="number">-598404839</span>,</span><br><span class="line">      <span class="string">&quot;elevation&quot;</span>:<span class="number">49802</span></span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="string">&quot;transmission&quot;</span>:<span class="string">&quot;neutral&quot;</span>,</span><br><span class="line">    <span class="string">&quot;speed&quot;</span>:<span class="number">0</span>,</span><br><span class="line">    <span class="string">&quot;heading&quot;</span>:<span class="number">0</span>,</span><br><span class="line">    <span class="string">&quot;accelSet&quot;</span>:&#123;</span><br><span class="line">      <span class="string">&quot;long&quot;</span>:<span class="number">20</span>,</span><br><span class="line">      <span class="string">&quot;lat&quot;</span>:<span class="number">20</span>,</span><br><span class="line">      <span class="string">&quot;vert&quot;</span>:<span class="number">0</span>,</span><br><span class="line">      <span class="string">&quot;yaw&quot;</span>:<span class="number">0</span></span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="string">&quot;brakes&quot;</span>:&#123;&#125;,</span><br><span class="line">    <span class="string">&quot;size&quot;</span>:&#123;</span><br><span class="line">      <span class="string">&quot;width&quot;</span>:<span class="number">20</span>,</span><br><span class="line">      <span class="string">&quot;length&quot;</span>:<span class="number">20</span></span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="string">&quot;vehicleClass&quot;</span>:&#123;</span><br><span class="line">      <span class="string">&quot;classification&quot;</span>:<span class="number">0</span></span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="ASN-1规范文件与ASN-1数据结构的关系"><a href="#ASN-1规范文件与ASN-1数据结构的关系" class="headerlink" title="ASN.1规范文件与ASN.1数据结构的关系"></a>ASN.1规范文件与ASN.1数据结构的关系</h2><p>规范文件是纯文本格式的文件，下面的定义都称为规范文件</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line">MsgFrame DEFINITIONS AUTOMATIC TAGS ::= BEGIN</span><br><span class="line"></span><br><span class="line">MessageFrame ::= CHOICE &#123; </span><br><span class="line">    bsmFrame BasicSafetyMessage,</span><br><span class="line">    mapFrame MapData,</span><br><span class="line">    rsmFrame RoadsideSafetyMessage,</span><br><span class="line">    spatFrame SPAT,</span><br><span class="line">    rsiFrame RoadSideInformation,</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">BasicSafetyMessage ::= SEQUENCE &#123;</span><br><span class="line">    msgCnt MsgCount,</span><br><span class="line">    id OCTET STRING (SIZE(<span class="number">8</span>)),</span><br><span class="line">    secMark DSecond,</span><br><span class="line">    timeConfidence TimeConfidence OPTIONAL,</span><br><span class="line">    pos Position3D,</span><br><span class="line">    posAccuracy PositionalAccuracy OPTIONAL,</span><br><span class="line">    posConfidence PositionConfidenceSet OPTIONAL,</span><br><span class="line">    transmission TransmissionState,</span><br><span class="line">    speed Speed,</span><br><span class="line">    heading Heading,</span><br><span class="line">    angle SteeringWheelAngle OPTIONAL,</span><br><span class="line">    motionCfd MotionConfidenceSet OPTIONAL,</span><br><span class="line">    accelSet AccelerationSet4Way,</span><br><span class="line">    brakes BrakeSystemStatus,</span><br><span class="line">    size VehicleSize,</span><br><span class="line">    vehicleClass VehicleClassification,</span><br><span class="line">    safetyExt VehicleSafetyExtensions OPTIONAL,</span><br><span class="line">    emergencyExt VehicleEmergencyExtensions OPTIONAL,</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>ASN.1数据结构则是ASN.1规范中定义的具体数据类型的实例化对象，它们是由规范中定义的ASN.1类型和值组成的。ASN.1数据结构可以被编码成二进制或其他格式用于网络通信或存储。</p>
+<p>因此ASN.1规范文件提供了一种用于定义ASN.1数据结构的语法和语义，而ASN.1数据结构则是符合ASN.1规范的具体数据类型和值的实例化对象。</p>
+<h1 id="三、真实环境中的ASN-1"><a href="#三、真实环境中的ASN-1" class="headerlink" title="三、真实环境中的ASN.1"></a>三、真实环境中的ASN.1</h1><p>目前发现V2X与极氪都采用ASN.1的方案，猜测smart、领克、星越L也采用该方案</p>
+<h2 id="极氪001的ASN-1"><a href="#极氪001的ASN-1" class="headerlink" title="极氪001的ASN.1"></a>极氪001的ASN.1</h2><p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%873.png" alt="图片3.png"></p>
+<p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%874.png" alt="图片4.png"></p>
+<p>在使用MQTT上传车辆状态时，会通过ASN.1的编码方式进行传输</p>
+<p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%875.png" alt="图片5.png"></p>
+<p>在log上传，控车数据下发，车辆数据上报等操作中，也都采用了ASN.1的方式进行编码传输。</p>
+<p>不同于小鹏、东风使用json进行明文传输，显然ASN.1的方式更安全，攻击者拿不到对应的规范文件，便还原不出对应的数据，但由于我们已经拿到固件中对应的ASN.1解密算法，没有规范文件，我们也可以对符合规范文件的数据进行解析（该方案据说吉利花了几十万）</p>
+<p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%876.png" alt="图片6.png"></p>
+<p>如何连接上MQTT参考这篇文章<a target="_blank" rel="noopener" href="https://xiaomi.f.mioffice.cn/docs/dock4yo2mxGi168Tr9Cczaxf4nE">极氪Tee中的证书加解密</a></p>
+<p>通过libNeuAsn1.so的接口，只要拿到数据便可还原出对应的字段</p>
+<p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%877.png" alt="图片7.png"></p>
+<h2 id="V2X中的ASN-1"><a href="#V2X中的ASN-1" class="headerlink" title="V2X中的ASN.1"></a>V2X中的ASN.1</h2><p>在2022年的GoGohack中，纽创信安的安全研究人员分享了C-V2X的攻击面，其中在通信空口处的数据交互采用了ASN.1的编码进行封装传输，通过对国标进行阅读理解，解析出在空口传输中的对应数据格式。</p>
+<p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%878.png" alt="图片8.png"></p>
+<p>在该研究人员的github中给出了v2x的国标文件与对应的asn规范格式<a target="_blank" rel="noopener" href="https://github.com/xuanxuanblingbling/cv2x%EF%BC%8C%E9%80%9A%E8%BF%87%E4%BB%96%E7%BB%99%E5%87%BA%E7%9A%84%E8%A7%A3%E7%A0%81%E8%84%9A%E6%9C%AC%EF%BC%8Cv2x%E7%9A%84%E6%95%B0%E6%8D%AE%E5%9F%BA%E6%9C%AC%E9%83%BD%E5%8F%AF%E4%BB%A5%E6%AD%A3%E5%B8%B8%E8%A7%A3%E5%AF%86">https://github.com/xuanxuanblingbling/cv2x，通过他给出的解码脚本，v2x的数据基本都可以正常解密</a></p>
+<p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%879.png" alt="图片9.png"></p>
+<p>在针对v2x数据fuzz中，按照规范文件的标准，直接暴力的对数据进行全随机化产生了漏洞，说明在终端数据解析中存在安全问题，开发在业务中不规范的进行代码编写仍然是产生安全问题的一大隐患。</p>
+<p>具体的分析思路可以去参考</p>
+<p><img src="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/%E5%9B%BE%E7%89%8710.png" alt="图片10.png"></p>
+<h1 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h1><p>根据3709车联网无线通讯技术要求，为了铺设v2x，采用ASN.1进行数据传输的车企可能越来越多，新技术伴随着新的安全风险，目前的ASN.1的风险有如下思考：</p>
+<ul>
+<li>规范文件的泄漏会导致数据被解密</li>
+<li>T-box侧固件泄漏同样会导致数据被解密</li>
+<li>解析数据的业务代码侧存在二进制漏洞</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>lxonz
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="http://lxonz.github.io/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/" title="ASN.1在汽车安全领域的应用">http://lxonz.github.io/2025/08/04/ASN.1在汽车安全领域中的应用/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2025/08/04/Pateo%E2%80%94MQTT%E6%B3%84%E6%BC%8F%E6%BC%8F%E6%B4%9E%E6%A2%B3%E7%90%86/" rel="prev" title="Pateo-MQTT泄漏漏洞梳理">
+      <i class="fa fa-chevron-left"></i> Pateo-MQTT泄漏漏洞梳理
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2025/08/06/Protobuf%E7%94%B1%E6%B5%85%E5%85%A5%E6%B7%B1/" rel="next" title="Protobuf由浅入深还原数据定义">
+      Protobuf由浅入深还原数据定义 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">一、背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E4%BB%80%E4%B9%88%E6%98%AFASN-1"><span class="nav-number">2.</span> <span class="nav-text">二、什么是ASN.1</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%BE%E4%BE%8B"><span class="nav-number">2.1.</span> <span class="nav-text">举例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ASN-1%E8%A7%84%E8%8C%83%E6%96%87%E4%BB%B6%E4%B8%8EASN-1%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E7%9A%84%E5%85%B3%E7%B3%BB"><span class="nav-number">2.2.</span> <span class="nav-text">ASN.1规范文件与ASN.1数据结构的关系</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E7%9C%9F%E5%AE%9E%E7%8E%AF%E5%A2%83%E4%B8%AD%E7%9A%84ASN-1"><span class="nav-number">3.</span> <span class="nav-text">三、真实环境中的ASN.1</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9E%81%E6%B0%AA001%E7%9A%84ASN-1"><span class="nav-number">3.1.</span> <span class="nav-text">极氪001的ASN.1</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#V2X%E4%B8%AD%E7%9A%84ASN-1"><span class="nav-number">3.2.</span> <span class="nav-text">V2X中的ASN.1</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="lxonz"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">lxonz</p>
+  <div class="site-description" itemprop="description">前小米汽车安全工程师 三角洲猛攻大师 web3持续学习中</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">4</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">lxonz</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">17k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">16 分钟</span>
+</div>
+
+<!--
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div> -->
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

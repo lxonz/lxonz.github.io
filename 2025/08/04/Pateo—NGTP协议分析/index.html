@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"lxonz.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="一、研究背景赋能天府杯，对Pateo的车联网架构进行深度分析，找到可能存在的漏洞 NGTP是Next Generation Telematics Protocol的英文缩写，意思是“下一代Telematics协议”，它是由BMW公司牵头，联合另外两家TSP（Telematics Service Providers)（其中一家为：“WirelessCar”,另外一家为“Connexis”）联合开发而">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Pateo-NGTP协议分析">
+<meta property="og:url" content="http://lxonz.github.io/2025/08/04/Pateo%E2%80%94NGTP%E5%8D%8F%E8%AE%AE%E5%88%86%E6%9E%90/index.html">
+<meta property="og:site_name" content="lxonz&#39;s blog">
+<meta property="og:description" content="一、研究背景赋能天府杯，对Pateo的车联网架构进行深度分析，找到可能存在的漏洞 NGTP是Next Generation Telematics Protocol的英文缩写，意思是“下一代Telematics协议”，它是由BMW公司牵头，联合另外两家TSP（Telematics Service Providers)（其中一家为：“WirelessCar”,另外一家为“Connexis”）联合开发而">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N1.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N2.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N3.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N4.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N5.jpg">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N6.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N7.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N8.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N9.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N10.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N11.jpg">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N12.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N13.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N14.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N15.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N16.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N17.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N18.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N19.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N20.jpg">
+<meta property="article:published_time" content="2025-08-04T08:04:30.000Z">
+<meta property="article:modified_time" content="2025-08-09T14:44:17.305Z">
+<meta property="article:author" content="lxonz">
+<meta property="article:tag" content="lxonz,blog">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/lxonz/Img/master/N1.png">
+
+<link rel="canonical" href="http://lxonz.github.io/2025/08/04/Pateo%E2%80%94NGTP%E5%8D%8F%E8%AE%AE%E5%88%86%E6%9E%90/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Pateo-NGTP协议分析 | lxonz's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">lxonz's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">前小米汽车安全工程师三角洲猛攻大师web3持续学习中</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://lxonz.github.io/2025/08/04/Pateo%E2%80%94NGTP%E5%8D%8F%E8%AE%AE%E5%88%86%E6%9E%90/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="lxonz">
+      <meta itemprop="description" content="前小米汽车安全工程师 三角洲猛攻大师 web3持续学习中">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="lxonz's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Pateo-NGTP协议分析
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2025-08-04 16:04:30" itemprop="dateCreated datePublished" datetime="2025-08-04T16:04:30+08:00">2025-08-04</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2025-08-09 22:44:17" itemprop="dateModified" datetime="2025-08-09T22:44:17+08:00">2025-08-09</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">汽车安全</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>8.4k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>8 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="一、研究背景"><a href="#一、研究背景" class="headerlink" title="一、研究背景"></a>一、研究背景</h1><p>赋能天府杯，对Pateo的车联网架构进行深度分析，找到可能存在的漏洞</p>
+<p><strong>NGTP</strong>是Next Generation Telematics Protocol的英文缩写，意思是“下一代Telematics协议”，它是由BMW公司牵头，联合另外两家TSP（Telematics Service Providers)（其中一家为：“WirelessCar”,另外一家为“Connexis”）联合开发而成的一个Telematics体系框架（framework)及开放的技术标准协议（technology-neutral protocol），它为Telematis产业应用提供了更大的灵活性（flexibility）及可扩展性（scalability）。</p>
+<p>NGTP的相关资料在网上不多，根据目前查证到的信息，跟Pateo这套纯协议架构有较大差别，并不能证明两套NGTP完全一个概念，但科恩对宝马的白皮书中，将宝马开创的NGTP定义为协议，且认为是一个攻击面。</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N1.png" alt="N1"></p>
+<p>Pateo在2013年的宣传认为自己建立了NGTP 2.0架构，支持控车等功能，合理认为NGTP为一种架构，当车和云进行通信时，使用NGTP协议进行传输，NGTP是架构，通过此架构进行通信的协议也叫NGTP，这就解答了疑问。</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N2.png" alt="N2"></p>
+<span id="more"></span>
+
+<h1 id="二、目标确定"><a href="#二、目标确定" class="headerlink" title="二、目标确定"></a>二、目标确定</h1><p>从app入手，发现mqtt相关问题，由于mqtt大量控车信息泄漏，认为mqtt即为东风风神的控车通道</p>
+<p>从车机入手，发现一台带控车的车机与实车连接的mqtt，都为<a target="_blank" rel="noopener" href="http://182.61.36.35:1883/">182.61.36.35</a>，该ip的mqtt服务只跟Pateo推出的语音助手soulmate相关</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N3.png" alt="N3"></p>
+<p>通过连接的ip注意到服务是com.pateo.tsp.service，该服务的apk为TSPService-release.apk，它加载了大量的so库</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N4.png" alt="N4"></p>
+<p>又通过mqtt的订阅通配符订阅，发现NGTP相关信息</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N5.jpg" alt="N5"></p>
+<p>通过grep匹配，定位到与NGTP相关的二进制程序</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">Binary file ./system/priv-app/TSPService-release/TSPService-release.apk matches</span><br><span class="line">Binary file ./system/priv-app/SpeechService-release/SpeechService-release.apk matches</span><br><span class="line">Binary file ./system/lib/libTBoxSDKAndroidAdapter.so matches</span><br><span class="line">Binary file ./system/lib/libTBoxCommon.so matches</span><br><span class="line">Binary file ./system/lib/libTBoxSDKAndroidAdapter.so.idb matches</span><br><span class="line">Binary file ./system/fonts/NotoSerif-Bold.ttf matches</span><br><span class="line">Binary file ./tbox/pateo/bin/tboxremoteconfig.db.perf matches</span><br><span class="line">Binary file ./tbox/pateo/bin/tboxremoteconfig.db.pro matches</span><br><span class="line">Binary file ./tbox/pateo/bin/tboxremoteconfig.db.uat matches</span><br><span class="line">Binary file ./tbox/pateo/bin/tboxremoteconfig.db matches</span><br><span class="line">./tbox/pateo/logs/logservice:[2022-05-27 15:58:09][xcallapp]get config key: ipReceiptionTopic, value: NGTP_Receipt</span><br><span class="line">Binary file ./tbox/pateo/lib/libxcalladapter.so.idb matches</span><br><span class="line">Binary file ./tbox/pateo/lib/libtboxcommon.so matches</span><br><span class="line">Binary file ./tbox/pateo/lib/libxcalladapter.so matches</span><br><span class="line">Binary file ./tbox/pateo/lib/libtboxcommon.so.id0 matches</span><br><span class="line">Binary file ./tbox/tboxremoteconfig.db matches</span><br><span class="line">Binary file ./123 matches</span><br><span class="line">Binary file ./vendor/app/qti-logkit/qti-logkit.apk matches</span><br><span class="line">Binary file ./vendor/lib/libUserAgent.so.idb matches</span><br><span class="line">Binary file ./vendor/lib/libUserAgent.so matches</span><br></pre></td></tr></table></figure>
+
+<p>在通过TSPService-release.apk加载的so库进行筛选，最终筛选出如下分析目标</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">Binary file ./system/lib/libTBoxSDKAndroidAdapter.so matches</span><br><span class="line">Binary file ./system/lib/libTBoxCommon.so matches</span><br><span class="line">Binary file ./tbox/pateo/lib/libtboxcommon.so matches</span><br><span class="line">Binary file ./tbox/pateo/lib/libxcalladapter.so matches</span><br></pre></td></tr></table></figure>
+
+<h1 id="三、so库分析"><a href="#三、so库分析" class="headerlink" title="三、so库分析"></a>三、so库分析</h1><h2 id="1-libTBoxSDKAndroidAdapter-so"><a href="#1-libTBoxSDKAndroidAdapter-so" class="headerlink" title="1. libTBoxSDKAndroidAdapter.so"></a>1. libTBoxSDKAndroidAdapter.so</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">void __fastcall pateo::MqttTransmitter::initOptions(pateo::MqttTransmitter *this)</span><br><span class="line">&#123;</span><br><span class="line">  void *v2; // r0</span><br><span class="line"></span><br><span class="line">  _android_log_print(6, &quot;TBoxSDK&quot;, &quot;MqttTransmitter initOptions&quot;);</span><br><span class="line">  memset(pateo::charServerAddr, 0, *((_DWORD *)this + 7) - *((_DWORD *)this + 8) + 1);</span><br><span class="line">  v2 = memset(pateo::clientid, 0, sizeof(pateo::clientid));</span><br><span class="line">  pateo::pdsn = getPDSN(v2);</span><br><span class="line">  strcpy(pateo::clientid, (const char *)pateo::pdsn);</span><br><span class="line">  strcpy(pateo::charServerAddr, *((const char **)this + 8));</span><br><span class="line">  memset(pateo::clientTopic, 0, sizeof(pateo::clientTopic));</span><br><span class="line">  sprintf(pateo::clientTopic, &quot;%s/NGTP&quot;, pateo::clientid);</span><br><span class="line">  memset(pateo::clientTopicMsg, 0, sizeof(pateo::clientTopicMsg));</span><br><span class="line">  sprintf(pateo::clientTopicMsg, &quot;baicc51eb_%s&quot;, pateo::clientid);</span><br><span class="line">  _android_log_print(6, &quot;TBoxSDK&quot;, &quot;pdsn: %s\n&quot;, (const char *)pateo::pdsn);</span><br><span class="line">  _android_log_print(6, &quot;TBoxSDK&quot;, &quot;clientid: %s\n&quot;, pateo::clientid);</span><br><span class="line">  _android_log_print(6, &quot;TBoxSDK&quot;, &quot;serverAddress: %s\n&quot;, pateo::charServerAddr);</span><br><span class="line">  _android_log_print(6, &quot;TBoxSDK&quot;, &quot;clientTopic: %s\n&quot;, pateo::clientTopic);</span><br><span class="line">  _android_log_print(6, &quot;TBoxSDK&quot;, &quot;clientTopicMsg: %s\n&quot;, pateo::clientTopicMsg);</span><br><span class="line">  if ( pateo::pdsn )</span><br><span class="line">    free((void *)pateo::pdsn);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>存在相关mqtt初始化的单吗，订阅的tpoic为NGTP相关</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N6.png" alt="N6"></p>
+<p>跟到setServiceAddress，定位到它加载MQTT的地址在tboxapi.so中</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N7.png" alt="N7"></p>
+<p>对183.95.186.9进行扫描，判定为弃用IP，无任何服务，libTBoxSDKAndroidAdapter服务于TSPService-release.apk，根据日志判断，TSPService并未连接控车MQTT。</p>
+<h2 id="2-libTBoxCommon-so"><a href="#2-libTBoxCommon-so" class="headerlink" title="2. libTBoxCommon.so"></a>2. libTBoxCommon.so</h2><p>此库也是服务于TSPService，主要用于接收mqtt消息进行decode，但根据消息对不上</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N8.png" alt="N8"></p>
+<p>从日志中查看，也未发现产生调用，因此焦点产生在了libxcalladapter.so和libtboxcommon.so</p>
+<h1 id="四、协议逆向"><a href="#四、协议逆向" class="headerlink" title="四、协议逆向"></a>四、协议逆向</h1><p>通过已有信息大致梳理，Pateo远程控车的方案如下所示</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N9.png" alt="N9"></p>
+<p>用户在app侧通过http发起控车，请求在云端进行处理，转交给MQTT服务，通过MQTT服务下发到车内的xcallapp，xcallapp通过调用libxcalladapter.so和libtboxcommon.so完成指令的处理。</p>
+<p>libxcalladapter.so：<strong>负责发起http、mqtt请求、dbus控车落地、日志上传等</strong></p>
+<p>libtboxcommon.so：<strong>负责数据的编码与解码、请求地址的获取、日志上传等</strong></p>
+<p>xcallapp: <strong>调用上述关键so库，Ecall、Bcall、Icall的发起</strong></p>
+<p>关键的协议数据解析，就在<strong>libtboxcommon.so，由pateo::NGTPEnDeCoder::decode完成，调用链如下：</strong></p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N10.png" alt="N10"></p>
+<p>从MQTT落地到xcallapp进行解码，对关键控车数据进行了DES3加密，密钥在so库明文显示</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N11.jpg" alt="N11"></p>
+<p><strong>NGTP协议数据包，具体如下所示，拆分成两段展示：</strong></p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N12.png" alt="N12"></p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N13.png" alt="N13"></p>
+<p>数据包通过7e01 7e02这种标记进行数据字段的切割</p>
+<p>第一段数据包重点关注 <strong>service type 与 message type ​</strong>​<strong>这两个字段标记是否为控车数据包</strong></p>
+<p>第二段数据包重点关注解密后的数据包，7e11标记控车事件，例如：解锁或开窗</p>
+<p>通过7d0100标记是开或关</p>
+<p>数据包中存在两段时间戳，一段在完整的数据包中，一段在加密的数据包中，前者采用亚洲时间，后者采用国际协调时，解密与加密脚本如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">解密：</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">decode_datatime</span>(<span class="params">hex1, hex2, hex3, hex4</span>):</span><br><span class="line">    <span class="keyword">if</span> hex2 == <span class="number">0x7f</span>:</span><br><span class="line">        hex23 = hex2 &amp; hex3</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        hex23 = hex2</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;Nofind 0x7f&quot;</span>)</span><br><span class="line">    strhex = [hex1, hex23, hex3, hex4]</span><br><span class="line">    <span class="comment">#strhex = [0x95,0xe7,0xcb,0x48]</span></span><br><span class="line">    <span class="comment">#0x59 0x7e 0xbc 0x84</span></span><br><span class="line">    a2=[<span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>]</span><br><span class="line">    <span class="comment"># print(srthex[0])</span></span><br><span class="line">    a2[<span class="number">0</span>] = (strhex[<span class="number">0</span>] &gt;&gt; <span class="number">2</span>) + <span class="number">100</span> + <span class="number">1900</span></span><br><span class="line">    v2 = <span class="number">4</span> * (strhex[<span class="number">0</span>] &amp; <span class="number">3</span>)</span><br><span class="line">    a2[<span class="number">1</span>] = v2 + (strhex[<span class="number">1</span>] &gt;&gt; <span class="number">6</span>)</span><br><span class="line">    a2[<span class="number">2</span>] = (strhex[<span class="number">1</span>] &amp; <span class="number">0x3E</span>) &gt;&gt; <span class="number">1</span></span><br><span class="line">    v3 = <span class="number">16</span> * (strhex[<span class="number">1</span>] &amp; <span class="number">1</span>)</span><br><span class="line">    a2[<span class="number">3</span>] = v3 + (strhex[<span class="number">2</span>] &gt;&gt; <span class="number">4</span>)</span><br><span class="line">    v4 = <span class="number">4</span> * (strhex[<span class="number">2</span>] &amp; <span class="number">0xF</span>)</span><br><span class="line">    a2[<span class="number">4</span>] = v4 + (strhex[<span class="number">3</span>] &gt;&gt; <span class="number">6</span>) </span><br><span class="line">    a2[<span class="number">5</span>] = (strhex[<span class="number">3</span>] &amp; <span class="number">0x3F</span>)</span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">6</span>):</span><br><span class="line">        a2[i] = <span class="built_in">str</span>(a2[i])</span><br><span class="line">    <span class="built_in">print</span>(a2[<span class="number">0</span>] + <span class="string">&quot;.&quot;</span> + a2[<span class="number">1</span>] + <span class="string">&quot;.&quot;</span> + a2[<span class="number">2</span>] + <span class="string">&quot; &quot;</span>+ a2[<span class="number">3</span>] + <span class="string">&quot;:&quot;</span> + a2[<span class="number">4</span>] + <span class="string">&quot;:&quot;</span> + a2[<span class="number">5</span>] )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    decode_datatime(<span class="number">0x59</span>,<span class="number">0x37</span>,<span class="number">0x03</span>,<span class="number">0x2B</span>)</span><br><span class="line">    </span><br><span class="line"><span class="comment">#2022.5.31 11:30:4</span></span><br><span class="line"><span class="comment">#598F2379</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br></pre></td><td class="code"><pre><span class="line">加密：</span><br><span class="line"><span class="keyword">def</span> <span class="title function_">asia_time</span>():</span><br><span class="line">    tz = pytz.timezone(<span class="string">&#x27;Asia/Shanghai&#x27;</span>) <span class="comment">#东八区</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    t = datetime.datetime.fromtimestamp(<span class="built_in">int</span>(time.time()), pytz.timezone(<span class="string">&#x27;Asia/Shanghai&#x27;</span>)).strftime(<span class="string">&#x27;%Y%m%d%H%M%S&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(t)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> _ <span class="keyword">in</span> t:</span><br><span class="line">        tm_year = <span class="built_in">int</span>(t[<span class="number">0</span>:<span class="number">4</span>])</span><br><span class="line">        tm_mon = <span class="built_in">int</span>(t[<span class="number">4</span>:<span class="number">6</span>])</span><br><span class="line">        tm_mday = <span class="built_in">int</span>(t[<span class="number">7</span>:<span class="number">8</span>])</span><br><span class="line">        tm_hour = <span class="built_in">int</span>(t[<span class="number">8</span>:<span class="number">10</span>])</span><br><span class="line">        tm_min = <span class="built_in">int</span>(t[<span class="number">10</span>:<span class="number">12</span>])</span><br><span class="line">        tm_sec = <span class="built_in">int</span>(t[<span class="number">12</span>:<span class="number">15</span>])</span><br><span class="line">        <span class="comment"># tm_year = t[0:4]</span></span><br><span class="line">        <span class="comment"># tm_mon = t[4:6]</span></span><br><span class="line">        <span class="comment"># tm_mday = t[6:8]</span></span><br><span class="line">        <span class="comment"># tm_hour = t[8:10]</span></span><br><span class="line">        <span class="comment"># tm_min = t[10:12]</span></span><br><span class="line">        <span class="comment"># tm_sec = t[12:15]</span></span><br><span class="line">        <span class="comment"># if t[10:11] != 0: ​</span></span><br><span class="line">        <span class="comment">#     tm_min = int(t[10:12])</span></span><br><span class="line">        <span class="comment"># else:</span></span><br><span class="line">        <span class="comment">#     tm_min = int(t[11:12])</span></span><br><span class="line">        <span class="comment"># if t[12:13] != 0:</span></span><br><span class="line">        <span class="comment">#     tm_sec = int(t[12:15])</span></span><br><span class="line">        <span class="comment"># else:</span></span><br><span class="line">        <span class="comment">#     tm_sec = int(t[13:15])</span></span><br><span class="line">    <span class="built_in">print</span>(tm_year)</span><br><span class="line">    <span class="built_in">print</span>(tm_mon)</span><br><span class="line">    <span class="built_in">print</span>(tm_mday)</span><br><span class="line">    <span class="built_in">print</span>(tm_hour)</span><br><span class="line">    <span class="built_in">print</span>(tm_min)</span><br><span class="line">    <span class="built_in">print</span>(tm_sec)</span><br><span class="line">    v16 = tm_year - <span class="number">100</span> - <span class="number">1900</span></span><br><span class="line">    v14 = tm_mon</span><br><span class="line">    hex1 = (<span class="number">4</span> * v16 + ((v14 &gt;&gt; <span class="number">2</span>) &amp; <span class="number">3</span>)) &amp; <span class="number">0xFF</span></span><br><span class="line">    hex2 = ((v14 &lt;&lt; <span class="number">6</span>) + ((<span class="number">2</span> * tm_mday) &amp; <span class="number">0x3E</span>) + ((tm_hour &gt;&gt; <span class="number">4</span>) &amp; <span class="number">1</span>)) &amp; <span class="number">0xFF</span></span><br><span class="line">    hex3 = (<span class="number">16</span> * tm_hour + ((tm_min &gt;&gt; <span class="number">2</span>) &amp; <span class="number">0xF</span>)) &amp; <span class="number">0xFF</span></span><br><span class="line">    hex4 = ((tm_min &lt;&lt; <span class="number">6</span>) + (tm_sec &amp; <span class="number">0x3F</span>)) &amp; <span class="number">0xFF</span></span><br><span class="line">    </span><br><span class="line">    hex1 = <span class="built_in">format</span>(hex1, <span class="string">&#x27;x&#x27;</span>)</span><br><span class="line">    hex2 = <span class="built_in">format</span>(hex2, <span class="string">&#x27;x&#x27;</span>)</span><br><span class="line">    hex3 = <span class="built_in">format</span>(hex3, <span class="string">&#x27;x&#x27;</span>).zfill(<span class="number">2</span>)</span><br><span class="line">    hex4 = <span class="built_in">format</span>(hex4, <span class="string">&#x27;x&#x27;</span>).zfill(<span class="number">2</span>)</span><br><span class="line">    hex_time = <span class="built_in">str</span>(hex1 + hex2 + hex3 + hex4)</span><br><span class="line">    <span class="keyword">return</span> hex_time</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">utc_time</span>():</span><br><span class="line">    utc_tz = pytz.timezone(<span class="string">&#x27;UTC&#x27;</span>) <span class="comment">#utc</span></span><br><span class="line">    t = datetime.datetime.fromtimestamp(<span class="built_in">int</span>(time.time()), pytz.timezone(<span class="string">&#x27;UTC&#x27;</span>)).strftime(<span class="string">&#x27;%Y%m%d%H%M%S&#x27;</span>)</span><br><span class="line">    <span class="comment">#t = datetime.datetime.now(tz=utc_tz)</span></span><br><span class="line">    <span class="built_in">print</span>(t)</span><br><span class="line">    <span class="keyword">for</span> _ <span class="keyword">in</span> t:</span><br><span class="line">        tm_year = <span class="built_in">int</span>(t[<span class="number">0</span>:<span class="number">4</span>])</span><br><span class="line">        tm_mon = <span class="built_in">int</span>(t[<span class="number">4</span>:<span class="number">6</span>])</span><br><span class="line">        tm_mday = <span class="built_in">int</span>(t[<span class="number">7</span>:<span class="number">8</span>])</span><br><span class="line">        tm_hour = <span class="built_in">int</span>(t[<span class="number">8</span>:<span class="number">10</span>])</span><br><span class="line">        tm_min = <span class="built_in">int</span>(t[<span class="number">10</span>:<span class="number">12</span>])</span><br><span class="line">        tm_sec = <span class="built_in">int</span>(t[<span class="number">12</span>:<span class="number">15</span>])</span><br><span class="line">    <span class="built_in">print</span>(tm_year)</span><br><span class="line">    <span class="built_in">print</span>(tm_mon)</span><br><span class="line">    <span class="built_in">print</span>(tm_mday)</span><br><span class="line">    <span class="built_in">print</span>(tm_hour)</span><br><span class="line">    <span class="built_in">print</span>(tm_min)</span><br><span class="line">    <span class="built_in">print</span>(tm_sec)</span><br><span class="line">    v16 = tm_year - <span class="number">100</span> - <span class="number">1900</span></span><br><span class="line">    v14 = tm_mon</span><br><span class="line">    hex1 = (<span class="number">4</span> * v16 + ((v14 &gt;&gt; <span class="number">2</span>) &amp; <span class="number">3</span>)) &amp; <span class="number">0xFF</span></span><br><span class="line">    hex2 = ((v14 &lt;&lt; <span class="number">6</span>) + ((<span class="number">2</span> * tm_mday) &amp; <span class="number">0x3E</span>) + ((tm_hour &gt;&gt; <span class="number">4</span>) &amp; <span class="number">1</span>)) &amp; <span class="number">0xFF</span></span><br><span class="line">    hex3 = (<span class="number">16</span> * tm_hour + ((tm_min &gt;&gt; <span class="number">2</span>) &amp; <span class="number">0xF</span>)) &amp; <span class="number">0xFF</span></span><br><span class="line">    hex4 = ((tm_min &lt;&lt; <span class="number">6</span>) + (tm_sec &amp; <span class="number">0x3F</span>)) &amp; <span class="number">0xFF</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="built_in">type</span>(hex1))</span><br><span class="line">    hex1 = <span class="built_in">format</span>(hex1, <span class="string">&#x27;x&#x27;</span>)</span><br><span class="line">    hex2 = <span class="built_in">format</span>(hex2, <span class="string">&#x27;x&#x27;</span>)</span><br><span class="line">    hex3 = <span class="built_in">format</span>(hex3, <span class="string">&#x27;x&#x27;</span>).zfill(<span class="number">2</span>)</span><br><span class="line">    hex4 = <span class="built_in">format</span>(hex4, <span class="string">&#x27;x&#x27;</span>).zfill(<span class="number">2</span>)</span><br><span class="line">    hex_time = <span class="built_in">str</span>(hex1 + hex2 + hex3 + hex4)</span><br><span class="line">    <span class="keyword">return</span> hex_time</span><br><span class="line">    <span class="comment">#print(hex_time)</span></span><br></pre></td></tr></table></figure>
+
+<p>对数据包进行完整的解析后，便可通过mqtt进行发包控车</p>
+<h1 id="五、MQTT地址寻找"><a href="#五、MQTT地址寻找" class="headerlink" title="五、MQTT地址寻找"></a>五、MQTT地址寻找</h1><p>通过观察日志可以找到mqtt地址</p>
+<figure class="highlight css"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="selector-attr">[1970-01-01 08:01:05]</span><span class="selector-attr">[xcallapp]</span>mqtt setServerAddress: last thread: <span class="number">0</span></span><br><span class="line">[<span class="number">1970</span>-<span class="number">01</span>-<span class="number">01</span> <span class="number">08</span>:<span class="number">01</span>:<span class="number">05</span>][xcallapp]NetworkProcess: clientid: V8664370539553700</span><br><span class="line">[<span class="number">1970</span>-<span class="number">01</span>-<span class="number">01</span> <span class="number">08</span>:<span class="number">01</span>:<span class="number">05</span>][xcallapp]NetworkProcess: charServerAddr: ssl://dfsptemq-uats.pateo.com.cn:<span class="number">9012</span></span><br><span class="line">[<span class="number">1970</span>-<span class="number">01</span>-<span class="number">01</span> <span class="number">08</span>:<span class="number">01</span>:<span class="number">05</span>][xcallapp]NetworkProcess: Request to connect server</span><br><span class="line">[<span class="number">1970</span>-<span class="number">01</span>-<span class="number">01</span> <span class="number">08</span>:<span class="number">01</span>:<span class="number">05</span>][xcallapp]NetworkProcess: MqttConnectServerDaemon. thread: <span class="number">2871011696</span></span><br><span class="line">[<span class="number">1970</span>-<span class="number">01</span>-<span class="number">01</span> <span class="number">08</span>:<span class="number">01</span>:<span class="number">05</span>][xcallapp]NetworkProcess: Wait for connecting server request.</span><br><span class="line">[<span class="number">1970</span>-<span class="number">01</span>-<span class="number">01</span> <span class="number">08</span>:<span class="number">01</span>:<span class="number">05</span>][xcallapp]NetworkProcess: Get connect server request.</span><br><span class="line">[<span class="number">1970</span>-<span class="number">01</span>-<span class="number">01</span> <span class="number">08</span>:<span class="number">01</span>:<span class="number">05</span>][xcallapp]NetworkProcess: Check connection: <span class="number">0</span></span><br></pre></td></tr></table></figure>
+
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N14.png" alt="N14"></p>
+<p>xcallapp初始化MqttTransFactory</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N15.png" alt="N15"></p>
+<p>MqttTransFactory通过(a1+1)+40调用函数setServerAddress，观察v3的参数，通过xcallapp初始化传入pateo::SysConfigEntity::getIpChannel((pateo::SysConfigEntity *)v17, v4);</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N16.png" alt="N16"></p>
+<p>寻找SysConfigEntity 在init里存在为ipChannel赋值</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N17.png" alt="N17"></p>
+<p>v22为函数调用，在(this+1)+8处调用，在pateo::SysConfigEntity::SysConfigEntity寻找调用关系</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N18.png" alt="N18"></p>
+<p>通过寻找IFactory::addFactory确认函数为pateo::SqlitePersistance::SqlitePersistance</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N19.png" alt="N19"></p>
+<p><strong>加载的数据库为tboxremoteconfig.db</strong></p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/N20.jpg" alt="N20"></p>
+<p><strong>mqtt地址确认为ssl:&#x2F;&#x2F;dfsptemq-xxxxxxxxxx</strong></p>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>lxonz
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="http://lxonz.github.io/2025/08/04/Pateo%E2%80%94NGTP%E5%8D%8F%E8%AE%AE%E5%88%86%E6%9E%90/" title="Pateo-NGTP协议分析">http://lxonz.github.io/2025/08/04/Pateo—NGTP协议分析/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/2025/08/04/Pateo%E2%80%94MQTT%E6%B3%84%E6%BC%8F%E6%BC%8F%E6%B4%9E%E6%A2%B3%E7%90%86/" rel="next" title="Pateo-MQTT泄漏漏洞梳理">
+      Pateo-MQTT泄漏漏洞梳理 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E7%A0%94%E7%A9%B6%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">一、研究背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E7%9B%AE%E6%A0%87%E7%A1%AE%E5%AE%9A"><span class="nav-number">2.</span> <span class="nav-text">二、目标确定</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%B8%89%E3%80%81so%E5%BA%93%E5%88%86%E6%9E%90"><span class="nav-number">3.</span> <span class="nav-text">三、so库分析</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-libTBoxSDKAndroidAdapter-so"><span class="nav-number">3.1.</span> <span class="nav-text">1. libTBoxSDKAndroidAdapter.so</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-libTBoxCommon-so"><span class="nav-number">3.2.</span> <span class="nav-text">2. libTBoxCommon.so</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%8D%8F%E8%AE%AE%E9%80%86%E5%90%91"><span class="nav-number">4.</span> <span class="nav-text">四、协议逆向</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BA%94%E3%80%81MQTT%E5%9C%B0%E5%9D%80%E5%AF%BB%E6%89%BE"><span class="nav-number">5.</span> <span class="nav-text">五、MQTT地址寻找</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="lxonz"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">lxonz</p>
+  <div class="site-description" itemprop="description">前小米汽车安全工程师 三角洲猛攻大师 web3持续学习中</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">4</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">lxonz</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">17k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">16 分钟</span>
+</div>
+
+<!--
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div> -->
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

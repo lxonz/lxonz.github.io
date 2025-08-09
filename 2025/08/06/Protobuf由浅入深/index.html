@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"lxonz.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="在目前智能网联汽车中使用protobuf的频率还是比较高的，例如dds、Apollo自动驾驶、某些汽车数据本地TCP数据传输，都采用protobuf定义相关数据格式，一般来讲，车厂使用protobuf进行序列化之后，并不会对数据进行加密，因此如何将数据还原成我们看得懂的状态（反序列化）是一个值得分析事情。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Protobuf由浅入深还原数据定义">
+<meta property="og:url" content="http://lxonz.github.io/2025/08/06/Protobuf%E7%94%B1%E6%B5%85%E5%85%A5%E6%B7%B1/index.html">
+<meta property="og:site_name" content="lxonz&#39;s blog">
+<meta property="og:description" content="在目前智能网联汽车中使用protobuf的频率还是比较高的，例如dds、Apollo自动驾驶、某些汽车数据本地TCP数据传输，都采用protobuf定义相关数据格式，一般来讲，车厂使用protobuf进行序列化之后，并不会对数据进行加密，因此如何将数据还原成我们看得懂的状态（反序列化）是一个值得分析事情。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro1.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro2.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro3.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro4.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro5.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro6.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro7.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro8.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro9.png">
+<meta property="article:published_time" content="2025-08-06T08:01:30.000Z">
+<meta property="article:modified_time" content="2025-08-09T13:46:34.452Z">
+<meta property="article:author" content="lxonz">
+<meta property="article:tag" content="lxonz,blog">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/lxonz/Img/master/pro1.png">
+
+<link rel="canonical" href="http://lxonz.github.io/2025/08/06/Protobuf%E7%94%B1%E6%B5%85%E5%85%A5%E6%B7%B1/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Protobuf由浅入深还原数据定义 | lxonz's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">lxonz's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">前小米汽车安全工程师三角洲猛攻大师web3持续学习中</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://lxonz.github.io/2025/08/06/Protobuf%E7%94%B1%E6%B5%85%E5%85%A5%E6%B7%B1/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="lxonz">
+      <meta itemprop="description" content="前小米汽车安全工程师 三角洲猛攻大师 web3持续学习中">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="lxonz's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Protobuf由浅入深还原数据定义
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2025-08-06 16:01:30" itemprop="dateCreated datePublished" datetime="2025-08-06T16:01:30+08:00">2025-08-06</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2025-08-09 21:46:34" itemprop="dateModified" datetime="2025-08-09T21:46:34+08:00">2025-08-09</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">汽车安全</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>4.9k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>4 分钟</span>
+            </span>
+            <div class="post-description">在目前智能网联汽车中使用protobuf的频率还是比较高的，例如dds、Apollo自动驾驶、某些汽车数据本地TCP数据传输，都采用protobuf定义相关数据格式，一般来讲，车厂使用protobuf进行序列化之后，并不会对数据进行加密，因此如何将数据还原成我们看得懂的状态（反序列化）是一个值得分析事情。</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="一、背景"><a href="#一、背景" class="headerlink" title="一、背景"></a>一、背景</h1><p>在目前智能网联汽车中使用protobuf的频率还是比较高的，例如dds、Apollo自动驾驶、某些汽车数据本地TCP数据传输，都采用protobuf定义相关数据格式，一般来讲，车厂使用protobuf进行序列化之后，并不会对数据进行加密，因此如何将数据还原成我们看得懂的状态（反序列化）是一个值得分析事情。</p>
+<h1 id="二、开发环境（C-）"><a href="#二、开发环境（C-）" class="headerlink" title="二、开发环境（C++）"></a>二、开发环境（C++）</h1><h2 id="Mac-os-M1"><a href="#Mac-os-M1" class="headerlink" title="Mac os M1"></a>Mac os M1</h2><p>别想了，因为架构问题，absl不太支持，环境起不来</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Undefined symbols <span class="keyword">for</span> architecture arm64:</span><br><span class="line">  <span class="string">&quot;_AbslInternalSpinLockWake&quot;</span>, referenced from:</span><br></pre></td></tr></table></figure>
+
+<h2 id="Linux"><a href="#Linux" class="headerlink" title="Linux"></a>Linux</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git clone https://github.com/protocolbuffers/protobuf.git</span><br></pre></td></tr></table></figure>
+
+<p>将abseil-cpp放进protobuf中third_party下</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git clone https://github.com/abseil/abseil-cpp</span><br></pre></td></tr></table></figure>
+
+<p>回到protobuf目录下进行cmake .&#x2F; &amp;&amp; make 然后 make install</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/pro1.png" alt="pro1"></p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">root<span class="variable">@iZ2ze7lesc0k6jujoawx4uZ</span>:<span class="operator">~</span><span class="operator">/</span>protobuf# protoc <span class="comment">--version</span></span><br><span class="line">libprotoc <span class="number">23.0</span></span><br></pre></td></tr></table></figure>
+
+<p>查看版本，这就算环境安装成功了</p>
+<h1 id="三、demo编写"><a href="#三、demo编写" class="headerlink" title="三、demo编写"></a>三、demo编写</h1><p>proto描述文件，定义数据格式</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">syntax <span class="operator">=</span> &quot;proto3&quot;;</span><br><span class="line"></span><br><span class="line">message Test &#123;</span><br><span class="line">    string name <span class="operator">=</span> <span class="number">1</span>;</span><br><span class="line">    int32 age <span class="operator">=</span> <span class="number">2</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>源文件</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">#include &quot;stdio.h&quot;</span><br><span class="line">#include &quot;test.pb.h&quot;</span><br><span class="line"><span class="type">int</span> main()</span><br><span class="line">&#123;</span><br><span class="line">        Test <span class="operator">*</span>test <span class="operator">=</span> <span class="keyword">new</span> Test();</span><br><span class="line">        test<span class="operator">-</span><span class="operator">&gt;</span>set_name(&quot;123&quot;);</span><br><span class="line">        test<span class="operator">-</span><span class="operator">&gt;</span>set_age(<span class="number">12345</span>);</span><br><span class="line">        printf(&quot;test  !!!!!\n&quot;);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>使用protoc工具对proto文件进行编译，会生成两个文件</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">protoc -I=./ --cpp_out=./ ./test.proto</span><br><span class="line"> test.pb.cc  test.pb.h</span><br></pre></td></tr></table></figure>
+
+<p>编译</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">g++ -o test test.cpp test.pb.cc -I /usr/local/include -L /usr/local/lib `pkg-config --cflags --libs protobuf`</span><br></pre></td></tr></table></figure>
+
+<p>问：为什么要做个C++的protobuf环境呢？</p>
+<p>答：在没有相应的protobuf数据只有binary时，我们自己编写demo，通过对比ida中的区别，确定相关代码在ida中的格式进行比较与学习。</p>
+<h1 id="四、分析对比"><a href="#四、分析对比" class="headerlink" title="四、分析对比"></a>四、分析对比</h1><h2 id="案例1"><a href="#案例1" class="headerlink" title="案例1"></a>案例1</h2><p>ida显示</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/pro2.png" alt="pro2"></p>
+<p>源码</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">#include &quot;stdio.h&quot;</span><br><span class="line">#include &quot;test.pb.h&quot;</span><br><span class="line"><span class="type">int</span> main()</span><br><span class="line">&#123;</span><br><span class="line">        Test <span class="operator">*</span>test <span class="operator">=</span> <span class="keyword">new</span> Test();</span><br><span class="line">        test<span class="operator">-</span><span class="operator">&gt;</span>set_name(&quot;123&quot;);</span><br><span class="line">        test<span class="operator">-</span><span class="operator">&gt;</span>set_age(<span class="number">12345</span>);</span><br><span class="line">        printf(&quot;test  !!!!!\n&quot;);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>从ida中可以看出，设置“123”字符串与set_age设置12345，能大致判断类型分别为string和int32，相应的就能写出对应的proto文件，但在实际业务中并不会这么简单，下面我们看一个相对复杂的。</p>
+<h2 id="案例2"><a href="#案例2" class="headerlink" title="案例2"></a>案例2</h2><p><img src="https://raw.githubusercontent.com/lxonz/Img/master/pro3.png" alt="pro3"></p>
+<p>案例2的逻辑不是在main中直接的，进到sendHeart看一下</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/pro4.png" alt="pro4"></p>
+<p>这里首先可以看到有一个TopMessage的消息类型，他对应一个set_message_type的字段，并且该字段的值为1，至于类型未知，简单还原一下目前的proto文件可能长什么样子</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">message TopMessage</span><br><span class="line">&#123;</span><br><span class="line">    String message_type = 1;  //这里1不是赋值，是编号</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/pro5.png" alt="pro5"></p>
+<p>这段代码多出MsgResult，值也为1，传入的v5为MsgResult的字符串指针，因此setBytes的部分，也属于MsgResult的字段，因此还原如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">message TopMessage</span><br><span class="line">&#123;</span><br><span class="line">    int32 message_type = 1;</span><br><span class="line">&#125;</span><br><span class="line">message MsgResult</span><br><span class="line">&#123;</span><br><span class="line">    int32 result = 1;</span><br><span class="line">    bytes error_code = 2;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>![<img src="https://raw.githubusercontent.com/lxonz/Img/master/pro6.png" alt="pro6"></p>
+<p>进到receHeartResp进行分析，发现msg_result是TopMessage的成员函数，并且打印了error_code的值，根据这条信息，我们对proto的信息进行修改</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">message TopMessage</span><br><span class="line">&#123;</span><br><span class="line">    int32 message_type = 1;</span><br><span class="line">    MsgResult msg_result = 2;</span><br><span class="line">&#125;</span><br><span class="line">message MsgResult</span><br><span class="line">&#123;</span><br><span class="line">    int32 result = 1;</span><br><span class="line">    bytes error_code = 2;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>由于message_type只为1或者2，因此可以在proto文件中将其值固定，最终还原的proto文件如下所示：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">enum Messagetype</span><br><span class="line">&#123;</span><br><span class="line">    NONE = 0; //enum中要求第一个值必须为0</span><br><span class="line">    SIGNAL = 1;</span><br><span class="line">    RESULT = 2;</span><br><span class="line">&#125;</span><br><span class="line">message TopMessage</span><br><span class="line">&#123;</span><br><span class="line">    Messagetype message_type = 1;</span><br><span class="line">    MsgResult msg_result = 2;</span><br><span class="line">&#125;</span><br><span class="line">message MsgResult</span><br><span class="line">&#123;</span><br><span class="line">    int32 result = 1;</span><br><span class="line">    bytes error_code = 2;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h1 id="五、实战分析（长安深蓝）"><a href="#五、实战分析（长安深蓝）" class="headerlink" title="五、实战分析（长安深蓝）"></a>五、实战分析（长安深蓝）</h1><p>我们以长安深蓝的binary Base_process进行分析，确定USB_MgrMessage的数据定义</p>
+
+
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/pro7.png" alt="pro7"></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">enum Messagetype</span><br><span class="line">&#123;</span><br><span class="line">    NONE = 0;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">message USB_MgrMessage</span><br><span class="line">&#123;</span><br><span class="line">    Messagetype message_id = 1;</span><br><span class="line">    Msg_usb_mgr_start_service_req msg_usb_mgr_start_service_req = 2;</span><br><span class="line">    </span><br><span class="line">&#125;</span><br><span class="line">message Msg_usb_mgr_start_service_req</span><br><span class="line">&#123;</span><br><span class="line">    USB_MGR_startService_REQ usb_mgr_startService_REQ = 1;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">message USB_MGR_startService_REQ</span><br><span class="line">&#123;</span><br><span class="line">    uint64 <span class="built_in">type</span> = 1;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>从上图所示的代码中，我们能恢复的部分为这些，为了更快速的还原数据定义，直接在函数中，找到相关set进行逐步还原</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/pro8.png" alt="pro8"></p>
+<p>先将所有mutable的字段全部筛选出来</p>
+<p><img src="https://raw.githubusercontent.com/lxonz/Img/master/pro9.png" alt="pro9"></p>
+<p><strong>注：mutable方法可以直接修改内部字段的字段的值，理解成将二级指针赋予给当前的指针，我们就有操作别的数据字段的能力了</strong></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br></pre></td><td class="code"><pre><span class="line">enum Messagetype</span><br><span class="line">&#123;</span><br><span class="line">    START_SERVICE = 0;</span><br><span class="line">    STATUS_NTF = 1;</span><br><span class="line">    TIMEOUT_NTF = 2;</span><br><span class="line">    STOP_SERVICE = 3;</span><br><span class="line">    RECIEVE_MSG = 4;</span><br><span class="line">    SEND_MSG = 5;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">message USB_MgrMessage</span><br><span class="line">&#123;</span><br><span class="line">    optional Messagetype message_id = 1;</span><br><span class="line">    optional Msg_usb_mgr_start_service_req msg_usb_mgr_start_service_req = 2;</span><br><span class="line">    optional Msg_usb_mgr_sock_connect_status_ntf msg_usb_mgr_sock_connect_status_ntf = 3；</span><br><span class="line">    optional Msg_usb_mgr_timer_timeout_ntf msg_usb_mgr_timer_timeout_ntf = 4;</span><br><span class="line">    optional Msg_usb_mgr_stop_service_req msg_usb_mgr_stop_service_req = 5;</span><br><span class="line">    optional Msg_usb_mgr_recieve_msg_ntf msg_usb_mgr_recieve_msg_ntf = 6;</span><br><span class="line">    optional Msg_usb_mgr_send_msg_ntf msg_usb_mgr_send_msg_ntf = 7;</span><br><span class="line">&#125;</span><br><span class="line">message Msg_usb_mgr_start_service_req</span><br><span class="line">&#123;</span><br><span class="line">    optional USB_MGR_startService_REQ usb_mgr_startService_req = 1;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">message USB_MGR_startService_REQ</span><br><span class="line">&#123;</span><br><span class="line">    optional uint64 <span class="built_in">type</span> = 1;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">message Msg_usb_mgr_sock_connect_status_ntf</span><br><span class="line">&#123;</span><br><span class="line">    optional USB_MGR_SockConnectStatus_NTF usb_mgr_sockconnectstatus_ntf = 1;</span><br><span class="line">&#125;</span><br><span class="line">message USB_MGR_SockConnectStatus_NTF</span><br><span class="line">&#123;</span><br><span class="line">    optional unit32 direcrion = 1;</span><br><span class="line">    optional unit32 status = 2;</span><br><span class="line">&#125;</span><br><span class="line">message Msg_usb_mgr_timer_timeout_ntf</span><br><span class="line">&#123;</span><br><span class="line">    optional USB_MGR_TimerTimeout_NTF usb_mgr_timertimeout_nef = 1;</span><br><span class="line">&#125;</span><br><span class="line">message USB_MGR_TimerTimeout_NTF</span><br><span class="line">&#123;</span><br><span class="line">    optional uint32 timeid = 1;</span><br><span class="line">&#125;</span><br><span class="line">message Msg_usb_mgr_stop_service_req</span><br><span class="line">&#123;</span><br><span class="line">    optional USB_MGR_stopService_REQ usb_mgr_stop_service_req = 1;</span><br><span class="line">&#125;</span><br><span class="line">message USB_MGR_stopService_REQ</span><br><span class="line">&#123; </span><br><span class="line">    optional uint64 <span class="built_in">type</span> = 1;</span><br><span class="line">&#125;</span><br><span class="line">message Msg_usb_mgr_recieve_msg_ntf</span><br><span class="line">&#123;</span><br><span class="line">    optional USB_MGR_RecieveMsg_NTF recievemsg = 1;    </span><br><span class="line">&#125;</span><br><span class="line">message USB_MGR_RecieveMsg_NTF</span><br><span class="line">&#123;</span><br><span class="line">    optional string data = 1;</span><br><span class="line">    optional uint32 len = 2;</span><br><span class="line">&#125;</span><br><span class="line">message Msg_usb_mgr_send_msg_ntf</span><br><span class="line">&#123;</span><br><span class="line">    optional USB_MGR_SendMsg_NTF sendmsg = 1;</span><br><span class="line">&#125;</span><br><span class="line">message USB_MGR_SendMsg_NTF</span><br><span class="line">&#123;</span><br><span class="line">    optional uint32 protocol_header = 1;</span><br><span class="line">    optional string data = 2;</span><br><span class="line">    optional uint32 len = 3;</span><br><span class="line">    optional unit32 result = 4;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>还原出来大致如上，由于没有真实数据，因此无法验证逆向的准确度，但整体上大差不差，看懂protobuf在ida中的表现形式，即可完成相关逆向工作。</p>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>lxonz
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="http://lxonz.github.io/2025/08/06/Protobuf%E7%94%B1%E6%B5%85%E5%85%A5%E6%B7%B1/" title="Protobuf由浅入深还原数据定义">http://lxonz.github.io/2025/08/06/Protobuf由浅入深/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2025/08/04/ASN.1%E5%9C%A8%E6%B1%BD%E8%BD%A6%E5%AE%89%E5%85%A8%E9%A2%86%E5%9F%9F%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/" rel="prev" title="ASN.1在汽车安全领域的应用">
+      <i class="fa fa-chevron-left"></i> ASN.1在汽车安全领域的应用
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">一、背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%BC%80%E5%8F%91%E7%8E%AF%E5%A2%83%EF%BC%88C-%EF%BC%89"><span class="nav-number">2.</span> <span class="nav-text">二、开发环境（C++）</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#Mac-os-M1"><span class="nav-number">2.1.</span> <span class="nav-text">Mac os M1</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Linux"><span class="nav-number">2.2.</span> <span class="nav-text">Linux</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%B8%89%E3%80%81demo%E7%BC%96%E5%86%99"><span class="nav-number">3.</span> <span class="nav-text">三、demo编写</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%88%86%E6%9E%90%E5%AF%B9%E6%AF%94"><span class="nav-number">4.</span> <span class="nav-text">四、分析对比</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B1"><span class="nav-number">4.1.</span> <span class="nav-text">案例1</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B2"><span class="nav-number">4.2.</span> <span class="nav-text">案例2</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%AE%9E%E6%88%98%E5%88%86%E6%9E%90%EF%BC%88%E9%95%BF%E5%AE%89%E6%B7%B1%E8%93%9D%EF%BC%89"><span class="nav-number">5.</span> <span class="nav-text">五、实战分析（长安深蓝）</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="lxonz"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">lxonz</p>
+  <div class="site-description" itemprop="description">前小米汽车安全工程师 三角洲猛攻大师 web3持续学习中</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">4</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">lxonz</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">17k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">16 分钟</span>
+</div>
+
+<!--
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div> -->
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
